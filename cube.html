@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<style>
+		#canvas {border:1px solid black;}
+		#scores {background-color:#c0c0c0; height:100px; width:200px; font-size:20px; float:'right'}
+		#game	{width:750px;}
+		#info	{float:right;}
+	</style>
+
+	<script>
+		window.requestAnimFrame = (function() {
+// 			return function(callback) {window.setTimeout(callback, 30)};
+			return window.requestAnimationFrame || window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame ||
+			function(callback) {window.setTimeout(callback, 1000/60)};
+		})();
+		var gameState=true, frames=0;
+		var gameFlags=6;		// 1=rotate, 2=fill, 4=draw
+		var canvas,ctx;
+
+		var worldX, worldY;
+		var mouse = {
+			x:0, y:0,
+			button: 0
+		};
+		var polys = [];
+
+		// Helper functions
+		function setBit(v,b) {return v | b;}
+		function clearBit(v,b) {return v & (~b & 0xFF)}
+		function toogleBit(v,b) {if(v&b) return clearBit(v,b); return setBit(v,b);}
+		function rad(deg) {return Math.PI*deg/180;}
+		function defined(o) {return typeof(o)!='undefined';}
+		function floor(d) {return Math.floor(d);}
+
+		function onMouseMove(e) {
+			var rect = canvas.getBoundingClientRect();
+			var x=e.clientX-rect.left, y=e.clientY-rect.top;
+			mouse.x = x-worldX/2;
+			mouse.y = y-worldY/2;
+		}
+		function onMouseDown(e) {
+			console.log('onMouseDown:\t e=%o, which=%o, button=%o', e,e.which,e.button);
+			if(e.which==1) mouse.button |= 1;
+			if(e.which==3) mouse.button |= 2;
+			e.preventDefault();
+			e.stopPropagation();
+			return false;
+		}
+		function onMouseUp(e) {
+			console.log('onMouseUp:\t e=%o, which=%o, button=%o', e,e.which,e.button);
+			if(e.which==1) mouse.button &= (~1 & 0xFF);
+			if(e.which==3) mouse.button &= (~2 & 0xFF);
+// 			mouse.button = 0;
+		}
+		function onKeyPress(e) {
+			console.log('onKeyPress:\t e=%o', e.keyCode);
+			if(e.keyCode==13) toggleGame();
+			if(e.keyCode==32)  gameFlags=toogleBit(gameFlags,1);
+			if(e.keyCode==102) gameFlags=toogleBit(gameFlags,2);
+			if(e.keyCode==100) gameFlags=toogleBit(gameFlags,4);
+		}
+		function onKeyDown(e) {
+			var key = event.which;
+			console.log('onKeyDown:\t key=%o', key);
+			if (key>46) return;
+			switch (key) {
+				case 37:			// Left Arrow
+					transformWorld({x:-2});
+					break;
+				case 39:			// Right Arrow
+					transformWorld({x:2});
+					break;
+				case 38:			// Up Arrow
+					transformWorld({y:-2});
+					break;
+				case 40:			// Down Arrow
+					transformWorld({y:2});
+					break;
+			}
+		}
+
+		function setupPolys() {
+			var tri1=[], tri2=[];
+			var color = 'rgba(0,0,255,0.5)';
+			// Front face
+			tri1[0] = {x:-1, y:-1, z:-1};
+			tri1[1] = {x:1, y:-1, z:-1};
+			tri1[2] = {x:1, y:1, z:-1};
+			polys.push(createPoly(tri1, 100, color));
+			tri2[0] = {x:-1, y:-1, z:-1};
+			tri2[1] = {x:-1, y:1, z:-1};
+			tri2[2] = {x:1, y:1, z:-1};
+			polys.push(createPoly(tri2, 100, color));
+			// Back face
+			tri1[0] = {x:-1, y:-1, z:1};
+			tri1[1] = {x:1, y:-1, z:1};
+			tri1[2] = {x:1, y:1, z:1};
+			polys.push(createPoly(tri1, 100, color));
+			tri2[0] = {x:-1, y:-1, z:1};
+			tri2[1] = {x:-1, y:1, z:1};
+			tri2[2] = {x:1, y:1, z:1};
+			polys.push(createPoly(tri2, 100, color));
+			// Left face
+			tri1[0] = {x:-1, y:-1, z:-1};
+			tri1[1] = {x:-1, y:-1, z:1};
+			tri1[2] = {x:-1, y:1, z:1};
+			polys.push(createPoly(tri1, 100, color));
+			tri2[0] = {x:-1, y:-1, z:-1};
+			tri2[1] = {x:-1, y:1, z:-1};
+			tri2[2] = {x:-1, y:1, z:1};
+			polys.push(createPoly(tri2, 100, color));
+			// Right face
+			tri1[0] = {x:1, y:-1, z:-1};
+			tri1[1] = {x:1, y:-1, z:1};
+			tri1[2] = {x:1, y:1, z:1};
+			polys.push(createPoly(tri1, 100, color));
+			tri2[0] = {x:1, y:-1, z:-1};
+			tri2[1] = {x:1, y:1, z:-1};
+			tri2[2] = {x:1, y:1, z:1};
+			polys.push(createPoly(tri2, 100, color));
+			// Top face
+			tri1[0] = {x:-1, y:-1, z:-1};
+			tri1[1] = {x:-1, y:-1, z:1};
+			tri1[2] = {x:1, y:-1, z:1};
+			polys.push(createPoly(tri1, 100, color));
+			tri2[0] = {x:-1, y:-1, z:-1};
+			tri2[1] = {x:1, y:-1, z:-1};
+			tri2[2] = {x:1, y:-1, z:1};
+			polys.push(createPoly(tri2, 100, color));
+			// Bottom face
+			tri1[0] = {x:-1, y:1, z:-1};
+			tri1[1] = {x:-1, y:1, z:1};
+			tri1[2] = {x:1, y:1, z:1};
+			polys.push(createPoly(tri1, 100, color));
+			tri2[0] = {x:-1, y:1, z:-1};
+			tri2[1] = {x:1, y:1, z:-1};
+			tri2[2] = {x:1, y:1, z:1};
+			polys.push(createPoly(tri2, 100, color));
+		}
+
+		function gameLoop() {
+			// Clear
+			ctx.clearRect(0,0, worldX,worldY);
+			// Draw
+			ctx.strokeStyle = '#c0c0c0';
+			ctx.beginPath();
+			ctx.moveTo(worldX/2, 0);
+			ctx.lineTo(worldX/2, worldY);
+			ctx.moveTo(0,worldY/2);
+			ctx.lineTo(worldX,worldY/2);
+			ctx.stroke();
+
+			for(var i=0;i<polys.length;i++) {
+				if(mouse.button&2) rotatePoly(polys[i], {x:rad(0), y:rad(0), z:rad(1)});
+				if(mouse.button&1) rotatePoly(polys[i], {x:rad(mouse.y/100), y:rad(-mouse.x/100), z:0});
+				if(gameFlags&1) rotatePoly(polys[i], {x:rad(0), y:rad(0.0), z:rad(1)});
+				if(gameFlags&2) fillPoly(polys[i]);
+				if(gameFlags&4) drawPoly(polys[i]);
+			}
+			frames++;
+		}
+
+		function createPoint(x,y,z) {
+			var p = {};
+			if(defined(x)) p.x=x;
+			if(defined(y)) p.y=y;
+			if(defined(z)) p.z=z;
+			return p;
+		}
+		function createPolyWithSides(sides) {
+			var a = 360/sides;
+			var points = [];
+			var p = {x:0,y:1,z:0};
+			for(var i=0;i<sides;i++) {
+				p = rotatePoint2D(p,rad(a));
+				points.push(p);
+			}
+			return {
+				points: points,
+				position: createPoint(0,0,0)
+			};
+		}
+		function createPoly(points, scale,color) {
+			var poly = {
+				points: [],
+				position: createPoint(0,0,0)
+			};
+			for(var i=0;i<points.length;i++) {
+				poly.points[i] = {
+					x: points[i].x,
+					y: points[i].y,
+					z: points[i].z
+				};
+			}
+			if(scale) scalePoly(poly,scale);
+			if(color) poly.color = color; else poly.color = 'blue';
+			return poly;
+		}
+		function copyPoly(poly) {
+			var newpoly = {
+				points: [],
+				position: {x:0,y:0,z:0}
+			};
+			for(var i=0;i<poly.points.length;i++) {
+				newpoly.points[i] = {
+					x: poly.points[i].x,
+					y: poly.points[i].y,
+					z: poly.points[i].z
+				};
+			}
+			return newpoly;
+		}
+
+		function scalePoint(point,scale) {
+			return {x:point.x*scale, y:point.y*scale, z:point.z*scale};
+		}
+		function scalePoly(poly,scale) {
+			for(var i=0;i<poly.points.length;i++) {
+				poly.points[i] = scalePoint(poly.points[i],scale);
+			}
+			return poly;
+		}
+		function transformPoint(point,trans) {
+			var p = {};
+			if(!trans.x) trans.x=0;			// TODO: Optimize this out later.
+			if(!trans.y) trans.y=0;			//
+			if(!trans.z) trans.z=0;			//
+			p.x = point.x+trans.x;
+			p.y = point.y+trans.y;
+			p.z = point.z+trans.z;
+			return p;
+		}
+		function transformPoly(poly,trans) {
+			for(var i=0;i<poly.points.length;i++) {
+				poly.points[i] = transformPoint(poly.points[i],trans);
+			}
+			return poly;
+		}
+		function transformWorld(trans) {
+			for(var i=0;i<polys.length;i++) {
+				polys[i].position = transformPoint(polys[i].position,trans);
+			}
+		}
+		function rotatePoint2D(point,angle) {		// Only around Z-axis
+			var x = point.x*Math.cos(angle) - point.y*Math.sin(angle);
+			var y = point.y*Math.cos(angle) + point.x*Math.sin(angle);
+			return {x:x,y:y,z:point.z};
+		}
+		function rotatePoint(point,angle) {
+			// Around Z
+			var x = point.x*Math.cos(angle.z) - point.y*Math.sin(angle.z);
+			var y = point.y*Math.cos(angle.z) + point.x*Math.sin(angle.z);
+			var z = point.z;
+			var nx,ny,nz;
+			// Around X
+			ny = y*Math.cos(angle.x) - z*Math.sin(angle.x);
+			nz = y*Math.sin(angle.x) + z*Math.cos(angle.x);
+			y=ny; z=nz;
+			// Around Y
+			nz = z*Math.cos(angle.y) - x*Math.sin(angle.y);
+			nx = z*Math.sin(angle.y) + x*Math.cos(angle.y);
+			x=nx; z=nz;
+			return {x:x, y:y, z:z};
+		}
+		function rotatePoly(poly,angle) {
+			for(var i=0;i<poly.points.length;i++) {
+				poly.points[i] = rotatePoint(poly.points[i],angle);
+			}
+			return poly;
+		}
+		function projectPoint(p) {
+			var eye = {x:0, y:0, z:500};
+			var sx = (eye.z * (p.x-eye.x)) / (eye.z + p.z) + eye.x;
+			var sy = (eye.z * (p.y-eye.y)) / (eye.z + p.z) + eye.y;
+			return {x:floor(sx), y:floor(sy)};
+		}
+		function drawLine(s,e) {
+			ctx.beginPath();
+			s = projectPoint(s);
+			e = projectPoint(e);
+			ctx.moveTo(s.x+worldX/2,s.y+worldY/2);
+			ctx.lineTo(e.x+worldX/2,e.y+worldY/2);
+			ctx.stroke();
+		}
+		function drawPoly(poly) {
+			ctx.strokeStyle = 'black';
+			for(var i=0;i<poly.points.length;i++) {
+				var s = poly.points[i];
+				var e = poly.points[i+1<poly.points.length ? i+1:0];
+				s = transformPoint(s, poly.position);
+				e = transformPoint(e, poly.position);
+				drawLine(s,e);
+			}
+		}
+		function fillPoly(poly) {
+			var p=[],t={};
+			p.push(projectPoint(transformPoint(poly.points[0],poly.position)));
+			p.push(projectPoint(transformPoint(poly.points[1],poly.position)));
+			p.push(projectPoint(transformPoint(poly.points[2],poly.position)));
+			p.sort(function(a,b) {return a.y-b.y;});		// Sort by Y
+			var x1=p[0].x, x2=p[1].x, x3=p[2].x;
+			var y1=p[0].y, y2=p[1].y, y3=p[2].y;
+// 			console.log('fillPoly:\n\tx1=%o,\ty1=%o,\n\tx2=%o,\ty2=%o,\n\tx3=%o,\ty3=%o', x1,y1,x2,y2,x3,y3);
+
+			var m1 = (x3-x1)/(y3-y1);
+			var m2 = (x2-x1)/(y2-y1);
+			ctx.beginPath();
+			if(y1!=y2) {
+				x2=x1;
+				for(var y=y1;y<y2;y++) {
+					ctx.moveTo(floor(x1+worldX/2),floor(y+worldY/2));
+					ctx.lineTo(floor(x2+worldX/2),floor(y+worldY/2));
+					x1 += m1;
+					x2 += m2;
+				}
+			}
+// 			m1 = (x3-x1)/(y3-y2);
+			m2 = (x3-x2)/(y3-y2);
+			for(var y=y2;y<y3;y++) {
+				ctx.moveTo(floor(x1+worldX/2),floor(y+worldY/2));
+				ctx.lineTo(floor(x2+worldX/2),floor(y+worldY/2));
+				x1 += m1;
+				x2 += m2;
+			}
+			ctx.strokeStyle = poly.color;
+			ctx.stroke();
+		}
+
+		function animLoop() {
+			requestAnimFrame(animLoop);
+			if(gameState) gameLoop();
+		}
+
+		function init() {
+			console.log('init()');
+			canvas = document.getElementById('canvas');
+			ctx = canvas.getContext('2d');
+			worldX = document.getElementById('canvas').width;
+			worldY = document.getElementById('canvas').height;
+			document.addEventListener('mousemove', onMouseMove);
+			document.addEventListener('mousedown', onMouseDown);
+			document.addEventListener('mouseup', onMouseUp);
+			document.addEventListener('contextmenu', function(e){e.preventDefault(); return false;});
+			document.addEventListener('keydown', onKeyDown);
+			document.addEventListener('keypress', onKeyPress);
+			setupPolys();
+			requestAnimFrame(animLoop);
+// 			gameLoop();
+		}
+		function toggleGame() {
+			gameState=!gameState;
+		}
+	</script>
+</head>
+<body onload="init()">
+	<div id="game">
+		<canvas id="canvas" width="500" height="500">You need a browser that supports HTML5 Canvas.</canvas>
+	</div>
+	<div>
+		<table>
+			<tr>
+				<td><b>D</b></td>
+				<td>Draw poly borders</td>
+			</tr>
+			<tr>
+				<td><b>F</b></td>
+				<td>Fill polys</td>
+			</tr><tr>
+				<td><b>Space</b></td>
+				<td>Toggle auto-rotate</td>
+			</tr>
+			<tr>
+				<td><b>Enter</b></td>
+				<td>Toggle engine state</td>
+			</tr>
+		</table>
+	</div>
+</body>
+</html>
